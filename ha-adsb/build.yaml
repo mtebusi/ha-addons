@@ -4,10 +4,3 @@ build_from:
   armhf: "ghcr.io/home-assistant/armhf-base:latest"
   armv7: "ghcr.io/home-assistant/armv7-base:latest"
   i386: "ghcr.io/home-assistant/i386-base:latest"
-labels:
-  org.opencontainers.image.title: "ADS-B Dashboard"
-  org.opencontainers.image.description: "HomeAssistant add-on for ADS-B receiver integration with tar1090"
-  org.opencontainers.image.source: "https://github.com/mtebusi/ha-addons"
-  org.opencontainers.image.licenses: "MIT"
-args:
-  TEMPIO_VERSION: "2021.09.0"

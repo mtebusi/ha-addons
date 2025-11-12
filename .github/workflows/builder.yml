@@ -107,14 +107,6 @@ jobs:
             echo "Skipping unsupported architecture: ${{ matrix.arch }}"
           fi
 
-      - name: Sanitize add-on files
-        if: steps.arch_check.outputs.supported == 'true'
-        run: |
-          cd "${{ matrix.addon }}"
-          # Make service scripts executable
-          find . -type f -name "run" -o -name "finish" | xargs chmod +x 2>/dev/null || true
-          find . -type f -name "*.sh" | xargs chmod +x 2>/dev/null || true
-
       - name: Set up QEMU
         if: steps.arch_check.outputs.supported == 'true'
         uses: docker/setup-qemu-action@v3
@@ -133,15 +125,17 @@ jobs:
 
       - name: Build add-on
         if: steps.arch_check.outputs.supported == 'true'
-        uses: home-assistant/builder@2024.03.5
+        uses: home-assistant/builder@master
         with:
           args: |
             --${{ matrix.arch }} \
             --target ${{ matrix.addon }} \
+            --image "${{ env.REGISTRY }}/${{ github.repository_owner }}/{arch}-${{ steps.info.outputs.slug }}" \
             --docker-hub ${{ env.REGISTRY }}/${{ github.repository_owner }} \
+            --no-latest \
             ${{ github.event_name != 'pull_request' && '--addon' || '--test' }}
 
       - name: Build success
         if: steps.arch_check.outputs.supported == 'true'
         run: |
-          echo "Successfully built ${{ matrix.addon }} for ${{ matrix.arch }}"
+          echo "✅ Successfully built ${{ matrix.addon }} for ${{ matrix.arch }}"
