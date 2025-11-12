@@ -67,3 +67,6 @@ test_config/
 *.db
 *.db-shm
 *.db-wal
+# Project-specific temporary files
+basics.md
+requirements.md
