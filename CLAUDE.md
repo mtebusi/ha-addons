@@ -4,566 +4,413 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**HomeAssistant MCP Server Add-on** - A secure, locally-hosted MCP (Model Context Protocol) server that runs as a HomeAssistant add-on, enabling Claude Desktop to interact with HomeAssistant instances through its native Connections capability.
+**Home Assistant Add-ons Repository** - A multi-addon repository containing Home Assistant add-ons that extend the functionality of Home Assistant instances. This repository follows the pattern of hosting multiple add-ons in a single repository with shared build infrastructure.
 
-### Core Features
-- SSE-based MCP server accessible at `<homeassistant_url>/sse`
-- OAuth2 authentication using HomeAssistant's native auth system
-- Full HomeAssistant control through REST and WebSocket APIs
-- Multi-architecture support (amd64, aarch64, armhf, armv7, i386)
-- AppArmor security profile with Security Rating 8
-- Zero-configuration setup for end users
+### Repository Structure
+
+This repository uses a **flat multi-addon architecture** where:
+- Each add-on is self-contained in its own root-level directory
+- Shared build scripts and templates are in `.common/`
+- CI/CD automatically discovers and builds all add-ons
+- Each add-on can be developed and released independently
+
+### Current Add-ons
+
+1. **ha-mcp-server**: MCP (Model Context Protocol) server that enables Claude Desktop to interact with HomeAssistant instances through OAuth2 authentication and SSE-based connections
+
+## Directory Structure
+
+```
+/
+├── ha-mcp-server/              # MCP Server Add-on
+│   ├── config.yaml            # Add-on configuration manifest
+│   ├── Dockerfile             # Multi-stage, multi-arch Dockerfile
+│   ├── build.yaml             # Build configuration for architectures
+│   ├── apparmor.txt          # AppArmor security profile
+│   ├── CHANGELOG.md          # Version changelog
+│   ├── DOCS.md               # User documentation
+│   ├── README.md             # Add-on description
+│   └── rootfs/               # Add-on runtime files
+│       ├── etc/              # Service configuration
+│       │   └── services.d/   # s6-overlay services
+│       └── app/              # Application code
+│           ├── __init__.py
+│           ├── server.py     # Main MCP server
+│           ├── auth.py       # OAuth2 authentication
+│           ├── config.py     # Configuration management
+│           ├── constants.py  # Version and constants
+│           ├── requirements.txt  # Python dependencies
+│           ├── tools/        # MCP tools implementation
+│           ├── ha_api/       # HomeAssistant API clients
+│           └── mcp/          # MCP protocol implementation
+├── .common/                   # Shared resources
+│   ├── build.sh              # Universal build script
+│   ├── templates/            # Templates for new add-ons
+│   │   ├── config.yaml.template
+│   │   ├── Dockerfile.template
+│   │   └── README.md.template
+│   └── README.md             # Development guide
+├── .github/                   # GitHub configuration
+│   └── workflows/
+│       ├── builder.yml       # Multi-addon build workflow
+│       └── lint.yml          # Code quality checks
+├── scripts/                   # Legacy build scripts
+├── repository.json            # Add-on repository manifest
+├── README.md                 # Repository documentation
+├── CLAUDE.md                 # This file
+├── LICENSE                   # MIT License
+└── .gitignore               # Git ignore configuration
+```
 
 ## Version Management
 
-All version references use these variables:
+Each add-on manages its own version independently in its `config.yaml` file:
+
 ```yaml
-VERSION: "1.0.0"
-BUILD_DATE: "2025-01-11"
-MCP_PROTOCOL_VERSION: "1.0"
-MIN_HA_VERSION: "2024.1.0"
+# ha-mcp-server/config.yaml
+version: "0.0.1"
 ```
 
-## Project Architecture
-
-### Directory Structure
-```
-/
-├── addon/                          # HomeAssistant add-on package
-│   ├── config.yaml                # Add-on configuration manifest
-│   ├── Dockerfile                 # Multi-stage, multi-arch Dockerfile
-│   ├── build.yaml                 # Build configuration for architectures
-│   ├── apparmor.txt              # AppArmor security profile
-│   ├── icon.png                  # 256x256 add-on icon
-│   ├── logo.png                  # 512x512 add-on logo
-│   ├── CHANGELOG.md              # Version changelog
-│   ├── DOCS.md                   # User documentation
-│   └── README.md                 # Add-on description
-├── src/                           # MCP server implementation
-│   ├── __init__.py               # Package initialization
-│   ├── server.py                 # Main SSE MCP server
-│   ├── auth.py                   # OAuth2 authentication handler
-│   ├── config.py                 # Configuration management
-│   ├── constants.py              # Version and constant definitions
-│   ├── tools/                    # MCP tools implementation
-│   │   ├── __init__.py          
-│   │   ├── base.py              # Base tool class
-│   │   ├── entities.py          # Entity management tools
-│   │   ├── devices.py           # Device control tools
-│   │   ├── integrations.py      # Integration management
-│   │   ├── addons.py            # Add-on management
-│   │   ├── scenes.py            # Scene management
-│   │   ├── automations.py       # Automation tools
-│   │   ├── scripts.py           # Script management
-│   │   ├── helpers.py           # Helper entities
-│   │   ├── dashboards.py        # Dashboard management
-│   │   ├── themes.py            # Theme management
-│   │   └── yaml_editor.py       # YAML configuration editor
-│   ├── ha_api/                   # HomeAssistant API clients
-│   │   ├── __init__.py
-│   │   ├── rest.py              # REST API client
-│   │   ├── websocket.py         # WebSocket API client
-│   │   └── auth.py              # Auth API wrapper
-│   ├── mcp/                      # MCP protocol implementation
-│   │   ├── __init__.py
-│   │   ├── protocol.py          # MCP protocol handler
-│   │   ├── sse.py               # SSE transport layer
-│   │   └── registry.py          # Tool registry
-│   └── requirements.txt          # Python dependencies
-├── .github/                       # GitHub configuration
-│   ├── workflows/
-│   │   ├── build.yml            # Multi-arch build and publish
-│   │   ├── lint.yml             # Code quality checks
-│   │   ├── test.yml             # Automated testing
-│   │   └── release.yml          # Release automation
-│   └── dependabot.yml           # Dependency updates
-├── tests/                         # Test suite (gitignored)
-│   ├── docker-compose.yml        # Test HomeAssistant instance
-│   ├── conftest.py              # pytest configuration
-│   ├── test_auth.py             # Authentication tests
-│   ├── test_tools.py            # Tool functionality tests
-│   ├── test_integration.py      # Integration tests
-│   └── fixtures/                # Test data and mocks
-├── scripts/                       # Development scripts
-│   ├── build.sh                 # Local build script
-│   ├── test.sh                  # Test runner
-│   └── release.sh               # Release helper
-├── repository.yaml               # Add-on repository manifest
-├── README.md                     # Repository documentation
-├── LICENSE                       # MIT License
-├── .gitignore                   # Git ignore configuration
-└── .editorconfig                # Editor configuration
-
-```
+Update the version in the add-on's `config.yaml` when making changes.
 
 ## Development Commands
 
-### Build Commands
+### Building Add-ons
+
 ```bash
-# Build add-on locally for testing
-./scripts/build.sh --arch amd64
+# Build specific add-on for specific architecture
+./.common/build.sh <addon-dir> --arch amd64
 
-# Build all architectures
-./scripts/build.sh --all
+# Build with push to registry
+./.common/build.sh <addon-dir> --arch amd64 --push
 
-# Build with debug output
-DEBUG=1 ./scripts/build.sh
+# Examples
+./.common/build.sh ha-mcp-server --arch amd64
+./.common/build.sh ha-mcp-server --arch aarch64 --push
 ```
 
-### Test Commands
+### Linting and Validation
+
 ```bash
-# Run full test suite with HomeAssistant instance
-./scripts/test.sh --full
-
-# Run unit tests only
-pytest tests/ -v
-
-# Run specific test file
-pytest tests/test_auth.py -v
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
-```
-
-### Lint Commands
-```bash
-# Python linting
-ruff check src/
-black --check src/
-mypy src/
+# Python linting (if add-on has Python code)
+find <addon-dir>/rootfs/app -name "*.py" -exec ruff check {} +
+find <addon-dir>/rootfs/app -name "*.py" -exec black --check {} +
 
 # YAML validation
-yamllint addon/
-yamllint .github/
+yamllint <addon-dir>/config.yaml
 
 # Dockerfile linting
-hadolint addon/Dockerfile
+hadolint <addon-dir>/Dockerfile
 
-# Add-on validation (HomeAssistant compliance)
-python -m homeassistant.components.hassio validate addon/
+# Validate add-on configuration
+python -c "
+import yaml
+with open('<addon-dir>/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+    required = ['name', 'version', 'slug', 'description', 'arch']
+    for field in required:
+        assert field in config, f'Missing {field}'
+"
 ```
 
-### Development Server
+### Testing
+
+Tests should be placed in the add-on directory:
+
 ```bash
-# Run MCP server locally (requires HA instance)
-python -m src.server --debug --ha-url http://localhost:8123 --token <long_lived_token>
+# Run add-on specific tests
+pytest <addon-dir>/tests/ -v
 
-# Run with test HomeAssistant
-docker-compose -f tests/docker-compose.yml up -d
-python -m src.server --test-mode
+# For ha-mcp-server
+pytest ha-mcp-server/tests/ -v
 ```
 
-## Implementation Details
+## Creating a New Add-on
 
-### MCP Server Core (`src/server.py`)
-```python
-# Main server implementation pattern
-class MCPServer:
-    - Initialize SSE endpoint at /sse
-    - Handle OAuth2 authentication flow
-    - Register all available tools
-    - Process incoming MCP requests
-    - Stream responses via SSE
-    - Maintain connection state
-    - Handle graceful shutdown
-```
+### Step-by-Step Guide
 
-### Authentication Flow (`src/auth.py`)
-```python
-# OAuth2 implementation
-1. Client connects to /sse with initial handshake
-2. Server responds with auth_required and auth_url
-3. User authenticates via HomeAssistant OAuth2
-4. Token passed back to Claude Desktop
-5. Subsequent requests include bearer token
-6. Token refresh handled automatically
-```
+1. **Copy the template**:
+   ```bash
+   cp -r .common/templates/ <new-addon-name>/
+   ```
 
-### Tool Registration (`src/tools/`)
-Each tool module must:
-- Inherit from `BaseTool` class
-- Define `name`, `description`, and `parameters` schema
-- Implement `execute()` method
-- Handle errors gracefully
-- Return structured responses
+2. **Configure the add-on** (`<new-addon-name>/config.yaml`):
+   ```yaml
+   name: "Your Add-on Name"
+   version: "0.1.0"
+   slug: "your_addon_slug"
+   description: "Brief description"
+   url: "https://github.com/mtebusi/ha-addons"
+   arch:
+     - amd64
+     - aarch64
+     - armhf
+     - armv7
+     - i386
+   startup: services
+   boot: auto
+   # ... other configuration
+   image: "ghcr.io/mtebusi/{arch}-your-addon-slug"
+   ```
 
-### HomeAssistant API Integration (`src/ha_api/`)
-```python
-# REST API client pattern
-class HARestClient:
-    - Token-based authentication
-    - Automatic retry with exponential backoff
-    - Rate limiting compliance
-    - Response caching where appropriate
-    
-# WebSocket client pattern  
-class HAWebSocketClient:
-    - Persistent connection management
-    - Event subscription handling
-    - Real-time state updates
-    - Automatic reconnection
-```
+3. **Create the directory structure**:
+   ```bash
+   mkdir -p <new-addon-name>/rootfs/app
+   mkdir -p <new-addon-name>/rootfs/etc/services.d/<service-name>
+   ```
 
-## Security Implementation
+4. **Implement the Dockerfile**:
+   - Use the template as a starting point
+   - Install dependencies
+   - Copy rootfs directory
+   - Set working directory to `/app`
 
-### AppArmor Profile (`addon/apparmor.txt`)
-```
-#include <tunables/global>
+5. **Implement the application** in `rootfs/app/`:
+   - Add your application code
+   - Create `requirements.txt` if using Python
+   - Implement service startup scripts in `rootfs/etc/services.d/`
 
-profile homeassistant-mcp-server flags=(attach_disconnected,mediate_deleted) {
-  #include <abstractions/base>
-  #include <abstractions/python>
-  
-  # Network access
-  network tcp,
-  network inet stream,
-  
-  # File access (restricted)
-  /data/** r,
-  /config/** r,
-  /ssl/** r,
-  
-  # Deny access to sensitive areas
-  deny /root/** rwx,
-  deny /etc/passwd r,
-  deny /etc/shadow r,
-}
-```
+6. **Create service scripts** (if needed):
 
-### Security Best Practices
-1. Never store tokens in plaintext
-2. Use HTTPS exclusively for production
-3. Implement rate limiting
-4. Log security events
-5. Validate all input
-6. Sanitize YAML modifications
-7. Use principle of least privilege
+   `rootfs/etc/services.d/<service-name>/run`:
+   ```bash
+   #!/usr/bin/with-contenv bashio
+   bashio::log.info "Starting service..."
+   cd /app
+   exec python -m your_module
+   ```
 
-## Docker Configuration
+   `rootfs/etc/services.d/<service-name>/finish`:
+   ```bash
+   #!/usr/bin/execlineb -S0
+   if { s6-test ${1} -ne 0 }
+   if { s6-test ${1} -ne 256 }
+   s6-svscanctl -t /var/run/s6/services
+   ```
 
-### Multi-Architecture Dockerfile
-```dockerfile
-# Build stage for each architecture
-ARG BUILD_FROM
-FROM $BUILD_FROM AS builder
+7. **Write documentation**:
+   - Update `README.md` with add-on details
+   - Update `DOCS.md` with user instructions
+   - Create `CHANGELOG.md`
 
-# Runtime stage
-FROM $BUILD_FROM
-ENV PYTHONUNBUFFERED=1
-COPY requirements.txt /
-RUN pip install --no-cache-dir -r /requirements.txt
-COPY src/ /app/
-WORKDIR /app
-CMD ["python", "-m", "server"]
-```
+8. **Test locally**:
+   ```bash
+   ./.common/build.sh <new-addon-name> --arch amd64
+   ```
 
-### Build Configuration (`addon/build.yaml`)
-```yaml
-build_from:
-  amd64: "ghcr.io/home-assistant/amd64-base-python:3.12"
-  aarch64: "ghcr.io/home-assistant/aarch64-base-python:3.12"
-  armhf: "ghcr.io/home-assistant/armhf-base-python:3.12"
-  armv7: "ghcr.io/home-assistant/armv7-base-python:3.12"
-  i386: "ghcr.io/home-assistant/i386-base-python:3.12"
-```
+9. **Update repository README**:
+   - Add your add-on to the list in `/README.md`
+
+10. **Commit and push**:
+    ```bash
+    git add <new-addon-name>/
+    git add README.md
+    git commit -m "feat: add <new-addon-name> add-on"
+    git push
+    ```
 
 ## GitHub Workflows
 
-### Build Workflow (`.github/workflows/build.yml`)
-- Triggers on push to main and PRs
-- Builds all architectures in parallel
-- Pushes to GitHub Container Registry
-- Updates version tags
+### Multi-Addon Builder (`builder.yml`)
 
-### Lint Workflow (`.github/workflows/lint.yml`)
-- Python linting (ruff, black, mypy)
-- YAML validation
-- Dockerfile linting
-- Add-on compliance check
+The builder workflow automatically:
+1. Discovers all add-ons (directories with `config.yaml`)
+2. Builds each add-on for all architectures
+3. Pushes images to GitHub Container Registry
+4. Uses build caching for faster builds
 
-### Test Workflow (`.github/workflows/test.yml`)
-- Spins up HomeAssistant test instance
-- Runs full test suite
-- Generates coverage reports
-- Posts results to PR
+The workflow triggers on:
+- Push to `main` branch
+- Pull requests
+- Version tags (`v*`)
+- Manual workflow dispatch
 
-### Release Workflow (`.github/workflows/release.yml`)
-- Triggers on version tags
-- Creates GitHub release
-- Updates changelog
-- Publishes to add-on repository
+### Lint and Validate (`lint.yml`)
 
-## Testing Strategy
+The lint workflow:
+1. Finds and lints all Python code in `*/rootfs/app/`
+2. Validates all YAML files
+3. Lints all Dockerfiles
+4. Validates add-on configurations
+5. Runs security scanning
 
-### Test HomeAssistant Instance (`tests/docker-compose.yml`)
+## Add-on Configuration Schema
+
+### Required Fields
+
 ```yaml
-version: '3'
-services:
-  homeassistant:
-    image: ghcr.io/home-assistant/home-assistant:stable
-    volumes:
-      - ./test_config:/config
-    environment:
-      - TZ=UTC
-    ports:
-      - "8123:8123"
-```
-
-### Test Coverage Requirements
-- Unit tests: >80% coverage
-- Integration tests: All API endpoints
-- Authentication flow: Full coverage
-- Tool execution: All tools tested
-- Error handling: All error paths
-
-## MCP Tools Implementation
-
-### Available Tools
-
-#### Entity Management
-- `get_entities` - Query entities by domain, area, or attributes
-- `get_entity_state` - Get current state and attributes
-- `set_entity_state` - Update entity state
-- `call_service` - Call any HomeAssistant service
-
-#### Device Control
-- `list_devices` - List all devices
-- `get_device_info` - Get device details
-- `control_device` - Send commands to devices
-- `configure_device` - Update device configuration
-
-#### Configuration Management
-- `list_integrations` - Show installed integrations
-- `add_integration` - Install new integration
-- `configure_integration` - Modify integration settings
-- `remove_integration` - Uninstall integration
-
-#### Add-on Management
-- `list_addons` - List installed add-ons
-- `install_addon` - Install new add-on
-- `start_addon` - Start add-on
-- `stop_addon` - Stop add-on
-- `configure_addon` - Update add-on config
-
-#### Automation & Scenes
-- `list_automations` - Show all automations
-- `create_automation` - Create new automation
-- `edit_automation` - Modify automation
-- `trigger_automation` - Manually trigger
-- `list_scenes` - Show all scenes
-- `create_scene` - Create new scene
-- `activate_scene` - Activate scene
-
-#### YAML Configuration
-- `read_yaml` - Read configuration file
-- `edit_yaml` - Modify configuration
-- `validate_yaml` - Check YAML syntax
-- `reload_yaml` - Reload configuration
-
-#### Dashboard Management
-- `list_dashboards` - Show all dashboards
-- `create_dashboard` - Create new dashboard
-- `edit_dashboard` - Modify dashboard
-- `add_card` - Add card to dashboard
-
-## Configuration Schema
-
-### Add-on Configuration (`addon/config.yaml`)
-```yaml
-name: "HomeAssistant MCP Server"
-version: "1.0.0"
-slug: "ha_mcp_server"
-description: "MCP server for Claude Desktop integration with HomeAssistant"
-arch:
+name: "string"          # Display name
+version: "x.y.z"        # Semantic version
+slug: "addon_slug"      # Unique identifier (lowercase, underscores)
+description: "string"   # Brief description
+arch:                   # Supported architectures (array)
   - amd64
   - aarch64
   - armhf
   - armv7
   - i386
-startup: services
-boot: auto
-init: false
-hassio_api: true
-homeassistant_api: true
-auth_api: true
-ingress: true
-ingress_port: 8089
-ingress_entry: /sse
-panel_icon: mdi:robot
-panel_title: MCP Server
-ports:
-  8089/tcp: 8089
-ports_description:
-  8089/tcp: MCP SSE Server
-options:
+```
+
+### Common Optional Fields
+
+```yaml
+url: "https://..."              # Project URL
+startup: services|application   # Startup type
+boot: auto|manual              # Auto-start on boot
+init: true|false               # Use s6-overlay init
+hassio_api: true|false         # Access to Supervisor API
+homeassistant_api: true|false  # Access to HA API
+auth_api: true|false           # Access to Auth API
+ingress: true|false            # Enable Ingress
+ingress_port: 8080             # Ingress port
+panel_icon: mdi:icon           # Panel icon
+panel_title: "Title"           # Panel title
+ports:                         # Port mappings
+  8080/tcp: 8080
+options:                       # Default configuration
   log_level: info
-  ssl: true
-  certfile: fullchain.pem
-  keyfile: privkey.pem
-schema:
+schema:                        # Configuration schema
   log_level: list(debug|info|warning|error)
-  ssl: bool
-  certfile: str?
-  keyfile: str?
-apparmor: true
+image: "registry/image"        # Docker image template
+apparmor: true|false          # Enable AppArmor
 ```
 
-## Performance Optimization
+## Docker Image Naming
 
-### Resource Limits
-- Memory: Max 128MB
-- CPU: Max 10% single core
-- Disk: Max 50MB storage
-- Connections: Max 10 concurrent
-
-### Optimization Strategies
-1. Connection pooling for API requests
-2. Response caching with TTL
-3. Lazy loading of tools
-4. Efficient SSE streaming
-5. Minimal Docker image size
-
-## Error Handling
-
-### Error Categories
-1. **Authentication Errors**: Return auth_required
-2. **API Errors**: Retry with backoff
-3. **Tool Errors**: Return error response
-4. **Connection Errors**: Attempt reconnection
-5. **Configuration Errors**: Log and fallback
-
-### Logging Strategy
-```python
-# Structured logging
-import structlog
-logger = structlog.get_logger()
-
-# Log levels by environment
-DEBUG: All operations
-INFO: Key operations and state changes
-WARNING: Recoverable errors
-ERROR: Failures requiring attention
+Images follow this naming convention:
+```
+ghcr.io/{owner}/{arch}-{slug}:{version}
+ghcr.io/{owner}/{arch}-{slug}:latest
 ```
 
-## Release Process
+Example:
+```
+ghcr.io/mtebusi/amd64-ha_mcp_server:0.0.1
+ghcr.io/mtebusi/amd64-ha_mcp_server:latest
+```
 
-### Version Bumping
-1. Update VERSION in `src/constants.py`
-2. Update version in `addon/config.yaml`
-3. Update version in `repository.yaml`
-4. Update CHANGELOG.md
-5. Create git tag: `v1.0.0`
-6. Push tag to trigger release
+## Architecture Support
 
-### Changelog Format
-```markdown
-## [1.0.0] - 2025-01-11
-### Added
-- Initial release
-- SSE MCP server implementation
-- OAuth2 authentication
-- Full HomeAssistant API integration
+All add-ons should support multiple architectures using multi-arch Docker builds:
 
-### Changed
-### Fixed
+| Architecture | Base Image |
+|--------------|------------|
+| amd64 | ghcr.io/home-assistant/amd64-base:latest |
+| aarch64 | ghcr.io/home-assistant/aarch64-base:latest |
+| armhf | ghcr.io/home-assistant/armhf-base:latest |
+| armv7 | ghcr.io/home-assistant/armv7-base:latest |
+| i386 | ghcr.io/home-assistant/i386-base:latest |
+
+For Python add-ons, use:
+```
+ghcr.io/home-assistant/{arch}-base-python:3.12
+```
+
+## Best Practices
+
 ### Security
-```
 
-## Development Guidelines
+1. Use AppArmor profiles for all add-ons
+2. Follow principle of least privilege
+3. Never store secrets in code
+4. Use Home Assistant's built-in authentication
+5. Validate all user inputs
+6. Keep dependencies up-to-date
 
-### Code Style
-- Python: Black formatting, ruff linting
-- Type hints required for all functions
-- Docstrings for all public methods
-- Maximum line length: 100
-- Import sorting: isort
+### Code Organization
 
-### Commit Convention
-```
-type(scope): description
+1. Keep add-on code in `rootfs/app/`
+2. Use `rootfs/etc/services.d/` for service management
+3. Configuration files go in `rootfs/etc/` or `/data/`
+4. Use `/config/` for Home Assistant configuration access
+5. Store persistent data in `/data/`
 
-- feat: New feature
-- fix: Bug fix
-- docs: Documentation
-- style: Formatting
-- refactor: Code restructuring
-- test: Test additions
-- chore: Maintenance
-```
+### Documentation
 
-### Pull Request Process
-1. Create feature branch
-2. Implement with tests
-3. Run full test suite
-4. Update documentation
-5. Submit PR with description
-6. Pass all CI checks
-7. Obtain review approval
+1. Keep README.md updated with features and installation
+2. DOCS.md should have user-facing configuration docs
+3. Update CHANGELOG.md with each version
+4. Include examples in documentation
+5. Document all configuration options
+
+### Versioning
+
+1. Follow semantic versioning (MAJOR.MINOR.PATCH)
+2. Update version in `config.yaml` for each release
+3. Tag releases with `v` prefix: `v1.0.0`
+4. Update CHANGELOG.md before releasing
+5. Test on multiple architectures before releasing
+
+### CI/CD
+
+1. All add-ons are built automatically on push
+2. Pull requests run linting and validation
+3. Builds are cached for faster iteration
+4. Images are pushed to GitHub Container Registry
+5. Failed builds block merging
 
 ## Troubleshooting
 
-### Common Issues
-1. **Connection refused**: Check HomeAssistant URL and port
-2. **Authentication failed**: Verify token permissions
-3. **Tools not loading**: Check tool registry initialization
-4. **SSL errors**: Verify certificate configuration
-5. **Performance issues**: Check resource limits
+### Build Issues
 
-### Debug Mode
-```bash
-# Enable debug logging
-addon:
-  options:
-    log_level: debug
+1. **Dockerfile errors**: Check base image compatibility
+2. **Missing dependencies**: Update package lists in Dockerfile
+3. **Architecture-specific issues**: Test on target architecture
+4. **Build timeouts**: Optimize build steps, use caching
 
-# View logs
-docker logs addon_ha_mcp_server
-```
+### Runtime Issues
 
-## Maintenance Tasks
+1. **Add-on won't start**: Check logs in Home Assistant
+2. **Permission errors**: Review AppArmor profile
+3. **API access issues**: Verify `*_api` flags in config.yaml
+4. **Service crashes**: Check service scripts in `services.d/`
 
-### Regular Updates
-- [ ] Update base Docker images monthly
-- [ ] Review and update dependencies
-- [ ] Security vulnerability scanning
-- [ ] Performance profiling
-- [ ] Documentation updates
+### Common Gotchas
 
-### Monitoring
-- Connection count metrics
-- Request/response times
-- Error rates
-- Memory usage
-- API rate limit status
-
-## Important Notes
-
-1. **Never commit sensitive data** (tokens, passwords, keys)
-2. **Always test locally** before pushing
-3. **Maintain backwards compatibility** with HA versions
-4. **Follow HomeAssistant add-on guidelines** strictly
-5. **Respect rate limits** of HomeAssistant APIs
-6. **Implement graceful degradation** for missing features
-7. **Use structured logging** for debugging
-8. **Document all API changes** in changelog
-9. **Test on all architectures** before release
-10. **Keep dependencies minimal** for security
+1. **Paths**: Use absolute paths in scripts
+2. **Dependencies**: Install all dependencies in Dockerfile
+3. **Logs**: Use bashio logging helpers for proper log levels
+4. **Configuration**: Validate user config before using
+5. **Networking**: Use Home Assistant Ingress when possible
 
 ## Quick Reference
 
 ### Key Files to Edit
-- `src/server.py` - Main server logic
-- `src/tools/*.py` - Add new tools here
-- `addon/config.yaml` - Add-on configuration
-- `src/constants.py` - Version management
-- `.github/workflows/*.yml` - CI/CD pipelines
+
+For existing add-ons:
+- `<addon>/config.yaml` - Add-on configuration
+- `<addon>/Dockerfile` - Container definition
+- `<addon>/rootfs/app/` - Application code
+- `<addon>/README.md` - Add-on documentation
+- `<addon>/CHANGELOG.md` - Version history
+
+For repository:
+- `README.md` - Repository documentation
+- `.github/workflows/builder.yml` - Build automation
+- `.common/build.sh` - Build script
 
 ### Testing Checklist
-- [ ] Unit tests pass
-- [ ] Integration tests pass
-- [ ] Manual testing on local HA
-- [ ] Multi-architecture builds succeed
-- [ ] Lint checks pass
+
+Before committing:
+- [ ] Add-on builds successfully locally
+- [ ] Configuration validates correctly
+- [ ] All required files present (README, Dockerfile, config.yaml)
+- [ ] CHANGELOG updated
+- [ ] Version bumped if needed
 - [ ] Documentation updated
-- [ ] Changelog updated
-- [ ] Version bumped appropriately
+- [ ] Tested on local Home Assistant (if possible)
+- [ ] Linting passes
+- [ ] No secrets committed
+
+## Important Notes
+
+1. **Multi-addon architecture**: Each add-on is independent with its own versioning
+2. **Shared infrastructure**: Use `.common/` for shared scripts and templates
+3. **Automatic discovery**: CI/CD automatically finds and builds all add-ons
+4. **Independent releases**: Add-ons can be released independently
+5. **No breaking changes**: Maintain backwards compatibility when possible
+6. **Documentation first**: Update docs before or with code changes
+7. **Security focus**: Always consider security implications
+8. **Test thoroughly**: Test on multiple architectures
+9. **Follow conventions**: Maintain consistency across add-ons
+10. **Keep it simple**: Minimize dependencies and complexity

@@ -1,0 +1,26 @@
+name: "Your Add-on Name"
+version: "0.1.0"
+slug: "your_addon_slug"
+description: "Brief description of your add-on"
+url: "https://github.com/mtebusi/ha-addons"
+arch:
+  - amd64
+  - aarch64
+  - armhf
+  - armv7
+  - i386
+startup: services
+boot: auto
+init: false
+hassio_api: true
+homeassistant_api: true
+auth_api: true
+ports:
+  8080/tcp: 8080
+ports_description:
+  8080/tcp: "Your service port"
+options:
+  log_level: info
+schema:
+  log_level: list(debug|info|warning|error)
+image: "ghcr.io/mtebusi/{arch}-your-addon-slug"

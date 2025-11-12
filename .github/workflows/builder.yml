@@ -1,0 +1,121 @@
+name: Build Add-ons
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  init:
+    name: Initialize build
+    runs-on: ubuntu-latest
+    outputs:
+      addons: ${{ steps.addons.outputs.addons }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find all add-ons
+        id: addons
+        run: |
+          # Find all directories with config.yaml (excluding .common and templates)
+          addons=$(find . -maxdepth 2 -name config.yaml ! -path "*/.common/*" ! -path "*/templates/*" -exec dirname {} \; | sed 's|^\./||' | jq -R -s -c 'split("\n")[:-1]')
+          echo "addons=${addons}" >> $GITHUB_OUTPUT
+          echo "Found add-ons: ${addons}"
+
+  build:
+    name: Build ${{ matrix.addon }} (${{ matrix.arch }})
+    needs: init
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        addon: ${{ fromJson(needs.init.outputs.addons) }}
+        arch: [amd64, aarch64, armhf, armv7, i386]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get addon information
+        id: info
+        run: |
+          if [ ! -f "${{ matrix.addon }}/config.yaml" ]; then
+            echo "Error: config.yaml not found in ${{ matrix.addon }}"
+            exit 1
+          fi
+
+          VERSION=$(grep "^version:" ${{ matrix.addon }}/config.yaml | cut -d'"' -f2)
+          SLUG=$(grep "^slug:" ${{ matrix.addon }}/config.yaml | awk '{print $2}')
+          NAME=$(grep "^name:" ${{ matrix.addon }}/config.yaml | cut -d'"' -f2)
+          DESCRIPTION=$(grep "^description:" ${{ matrix.addon }}/config.yaml | cut -d'"' -f2)
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "slug=${SLUG}" >> $GITHUB_OUTPUT
+          echo "name=${NAME}" >> $GITHUB_OUTPUT
+          echo "description=${DESCRIPTION}" >> $GITHUB_OUTPUT
+
+          echo "Building ${NAME} v${VERSION} (${SLUG})"
+
+      - name: Determine base image
+        id: base
+        run: |
+          case "${{ matrix.arch }}" in
+            amd64)   echo "image=ghcr.io/home-assistant/amd64-base:latest" >> $GITHUB_OUTPUT ;;
+            aarch64) echo "image=ghcr.io/home-assistant/aarch64-base:latest" >> $GITHUB_OUTPUT ;;
+            armhf)   echo "image=ghcr.io/home-assistant/armhf-base:latest" >> $GITHUB_OUTPUT ;;
+            armv7)   echo "image=ghcr.io/home-assistant/armv7-base:latest" >> $GITHUB_OUTPUT ;;
+            i386)    echo "image=ghcr.io/home-assistant/i386-base:latest" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.addon }}/
+          file: ${{ matrix.addon }}/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.arch }}-${{ steps.info.outputs.slug }}:latest
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.arch }}-${{ steps.info.outputs.slug }}:${{ steps.info.outputs.version }}
+          build-args: |
+            BUILD_FROM=${{ steps.base.outputs.image }}
+            BUILD_ARCH=${{ matrix.arch }}
+            BUILD_DATE=${{ github.run_id }}
+            BUILD_REF=${{ github.sha }}
+            BUILD_VERSION=${{ steps.info.outputs.version }}
+            BUILD_NAME=${{ steps.info.outputs.name }}
+            BUILD_DESCRIPTION=${{ steps.info.outputs.description }}
+            BUILD_REPOSITORY=${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image details
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "✅ Built and pushed:"
+          echo "   ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.arch }}-${{ steps.info.outputs.slug }}:${{ steps.info.outputs.version }}"

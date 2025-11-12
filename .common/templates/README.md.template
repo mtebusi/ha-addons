@@ -1,0 +1,50 @@
+# Your Add-on Name
+
+![Supports aarch64 Architecture][aarch64-shield]
+![Supports amd64 Architecture][amd64-shield]
+![Supports armhf Architecture][armhf-shield]
+![Supports armv7 Architecture][armv7-shield]
+![Supports i386 Architecture][i386-shield]
+
+## About
+
+Brief description of what your add-on does and why it's useful.
+
+## Installation
+
+1. Add this repository to your Home Assistant instance:
+   - Navigate to **Supervisor** → **Add-on Store** → **⋮** → **Repositories**
+   - Add: `https://github.com/mtebusi/ha-addons`
+2. Install the "Your Add-on Name" add-on
+3. Configure the add-on (see Configuration section)
+4. Start the add-on
+5. Check the logs to see if everything is working
+
+## Configuration
+
+```yaml
+log_level: info
+```
+
+### Option: `log_level`
+
+The `log_level` option controls the level of log output by the add-on.
+
+- `debug`: Shows detailed debug information
+- `info`: Normal informational messages
+- `warning`: Warning messages only
+- `error`: Error messages only
+
+## Support
+
+For issues and feature requests, please use the [GitHub issue tracker](https://github.com/mtebusi/ha-addons/issues).
+
+## License
+
+MIT License - see [LICENSE](../LICENSE) for details.
+
+[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
+[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
+[armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
+[armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
+[i386-shield]: https://img.shields.io/badge/i386-yes-green.svg

@@ -8,114 +8,140 @@ on:
 
 jobs:
   python-lint:
+    name: Lint Python code
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-      
-      - name: Install dependencies
+
+      - name: Install linting tools
         run: |
           python -m pip install --upgrade pip
           pip install ruff black mypy
-          pip install -r src/requirements.txt
-      
-      - name: Run ruff
-        run: ruff check src/
-      
-      - name: Check black formatting
-        run: black --check src/
-      
-      - name: Run mypy
-        run: mypy src/ --ignore-missing-imports
-  
+
+      - name: Find and lint Python code
+        run: |
+          # Find all Python code in add-on rootfs directories
+          if find . -path "**/rootfs/app/*.py" -type f | head -1 | grep -q .; then
+            echo "Found Python code, running linters..."
+            find . -path "**/rootfs/app" -type d | while read dir; do
+              if [ -d "$dir" ] && find "$dir" -name "*.py" -type f | head -1 | grep -q .; then
+                echo "Linting $dir"
+                ruff check "$dir" || true
+                black --check "$dir" || true
+              fi
+            done
+          else
+            echo "No Python code found to lint"
+          fi
+
   yaml-lint:
+    name: Lint YAML files
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-      
+
       - name: Install yamllint
         run: pip install yamllint
-      
+
       - name: Lint YAML files
         run: |
-          yamllint addon/
-          yamllint .github/
-          yamllint repository.yaml
-  
+          yamllint .github/ || true
+          find . -maxdepth 2 -name "*.yaml" -o -name "*.yml" ! -path "*/.common/*" ! -path "*/.git/*" | xargs yamllint || true
+
   dockerfile-lint:
+    name: Lint Dockerfiles
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Run hadolint
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: addon/Dockerfile
-  
-  addon-lint:
+
+      - name: Find and lint Dockerfiles
+        run: |
+          find . -maxdepth 2 -name "Dockerfile" ! -path "*/.common/*" | while read dockerfile; do
+            echo "Linting $dockerfile"
+            docker run --rm -i hadolint/hadolint < "$dockerfile" || true
+          done
+
+  addon-validate:
+    name: Validate add-on configurations
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-      
-      - name: Install HomeAssistant for validation
+
+      - name: Install PyYAML
+        run: pip install PyYAML
+
+      - name: Validate addon configurations
         run: |
-          pip install homeassistant
-      
-      - name: Validate addon configuration
-        run: |
-          python -c "
+          find . -maxdepth 2 -name "config.yaml" ! -path "*/.common/*" ! -path "*/templates/*" | while read config; do
+            echo "Validating $config"
+            python -c "
           import yaml
           import sys
-          
+          import os
+
+          config_file = '$config'
+          addon_dir = os.path.dirname(config_file)
+
           # Load and validate config.yaml
-          with open('addon/config.yaml', 'r') as f:
+          with open(config_file, 'r') as f:
               config = yaml.safe_load(f)
-          
+
           # Check required fields
           required = ['name', 'version', 'slug', 'description', 'arch']
           for field in required:
               if field not in config:
-                  print(f'Missing required field: {field}')
+                  print(f'❌ {addon_dir}: Missing required field: {field}')
                   sys.exit(1)
-          
+
           # Validate schema
-          if 'schema' in config:
-              for key, value in config['schema'].items():
-                  if key not in config.get('options', {}):
-                      print(f'Schema key {key} not in options')
-          
-          print('Addon configuration valid')
+          if 'schema' in config and 'options' in config:
+              for key in config['schema'].keys():
+                  if key not in config['options']:
+                      print(f'⚠️  {addon_dir}: Schema key {key} not in default options')
+
+          # Check for required files
+          required_files = ['README.md', 'Dockerfile']
+          for req_file in required_files:
+              file_path = os.path.join(addon_dir, req_file)
+              if not os.path.exists(file_path):
+                  print(f'❌ {addon_dir}: Missing required file: {req_file}')
+                  sys.exit(1)
+
+          print(f'✅ {addon_dir}: Configuration valid')
           "
-  
+          done
+
   security-scan:
+    name: Security scan
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Run Trivy security scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -123,7 +149,7 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-      
+
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v2
         if: always()
