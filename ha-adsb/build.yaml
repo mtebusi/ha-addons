@@ -1,13 +1,13 @@
 build_from:
-  amd64: "ghcr.io/home-assistant/amd64-base:latest"
-  aarch64: "ghcr.io/home-assistant/aarch64-base:latest"
-  armhf: "ghcr.io/home-assistant/armhf-base:latest"
-  armv7: "ghcr.io/home-assistant/armv7-base:latest"
-  i386: "ghcr.io/home-assistant/i386-base:latest"
+  aarch64: "ghcr.io/home-assistant/aarch64-base:3.21"
+  amd64: "ghcr.io/home-assistant/amd64-base:3.21"
+  armhf: "ghcr.io/home-assistant/armhf-base:3.21"
+  armv7: "ghcr.io/home-assistant/armv7-base:3.21"
+  i386: "ghcr.io/home-assistant/i386-base:3.21"
 labels:
   org.opencontainers.image.title: "ADS-B Dashboard"
   org.opencontainers.image.description: "HomeAssistant add-on for ADS-B receiver integration with tar1090"
   org.opencontainers.image.source: "https://github.com/mtebusi/ha-addons"
   org.opencontainers.image.licenses: "MIT"
 args:
-  PYTHON_VERSION: "3.12"
+  TEMPIO_VERSION: "2021.09.0"
