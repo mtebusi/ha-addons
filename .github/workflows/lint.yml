@@ -27,12 +27,12 @@ jobs:
         run: |
           for config in $(find . -maxdepth 2 -name "config.yaml" ! -path "*/.common/*" ! -path "*/templates/*"); do
             echo "Validating $config"
-            python3 -c "
+            CONFIG_FILE="$config" python3 << 'PYEOF'
 import yaml
 import sys
 import os
 
-config_file = '$config'
+config_file = os.environ['CONFIG_FILE']
 addon_dir = os.path.dirname(config_file)
 
 with open(config_file, 'r') as f:
@@ -42,7 +42,7 @@ with open(config_file, 'r') as f:
 required = ['name', 'version', 'slug', 'description', 'arch']
 for field in required:
     if field not in config:
-        print(f'❌ {addon_dir}: Missing required field: {field}')
+        print(f"❌ {addon_dir}: Missing required field: {field}")
         sys.exit(1)
 
 # Check required files
@@ -50,11 +50,11 @@ required_files = ['README.md', 'Dockerfile']
 for req_file in required_files:
     file_path = os.path.join(addon_dir, req_file)
     if not os.path.exists(file_path):
-        print(f'❌ {addon_dir}: Missing required file: {req_file}')
+        print(f"❌ {addon_dir}: Missing required file: {req_file}")
         sys.exit(1)
 
-print(f'✅ {addon_dir}: Configuration valid')
-"
+print(f"✅ {addon_dir}: Configuration valid")
+PYEOF
           done
 
   python-lint:
