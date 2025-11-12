@@ -1,0 +1,282 @@
+name: Update README
+
+# Auto-generates README with current add-on information
+# Runs daily and on push to keep documentation fresh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '*/config.yaml'
+      - '.github/workflows/update-readme.yml'
+  schedule:
+    - cron: '0 12 * * *'  # Daily at noon UTC
+  workflow_dispatch:
+
+jobs:
+  update-readme:
+    name: Auto-update README
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install PyYAML
+
+      - name: Generate README
+        run: |
+          cat > generate_readme.py << 'PYTHON_SCRIPT'
+          import os
+          import yaml
+          from datetime import datetime
+
+          def load_addon_config(addon_dir):
+              """Load and parse add-on config.yaml"""
+              config_path = os.path.join(addon_dir, 'config.yaml')
+              if not os.path.exists(config_path):
+                  return None
+
+              with open(config_path, 'r') as f:
+                  return yaml.safe_load(f)
+
+          def get_all_addons():
+              """Find all add-ons in the repository"""
+              addons = []
+
+              for item in os.listdir('.'):
+                  if item.startswith('.') or item in ['scripts', 'README.md', 'LICENSE', 'CLAUDE.md']:
+                      continue
+
+                  addon_dir = os.path.join('.', item)
+                  if os.path.isdir(addon_dir):
+                      config = load_addon_config(addon_dir)
+                      if config:
+                          addons.append({
+                              'dir': item,
+                              'config': config
+                          })
+
+              return sorted(addons, key=lambda x: x['config'].get('name', ''))
+
+          def generate_addon_table(addons):
+              """Generate markdown table of add-ons"""
+              if not addons:
+                  return "No add-ons available yet."
+
+              lines = []
+              lines.append("| Add-on | Version | Description | Architectures |")
+              lines.append("|--------|---------|-------------|---------------|")
+
+              for addon in addons:
+                  config = addon['config']
+                  name = config.get('name', 'Unknown')
+                  version = config.get('version', '0.0.0')
+                  desc = config.get('description', 'No description')
+                  archs = config.get('arch', [])
+
+                  # Create architecture badges
+                  arch_badges = []
+                  for arch in ['amd64', 'aarch64', 'armv7', 'armhf', 'i386']:
+                      if arch in archs:
+                          arch_badges.append(f'`{arch}`')
+
+                  arch_str = ' '.join(arch_badges) if arch_badges else 'None'
+
+                  # Create link to add-on directory
+                  name_link = f"[{name}]({addon['dir']}/README.md)"
+
+                  lines.append(f"| {name_link} | `{version}` | {desc} | {arch_str} |")
+
+              return '\n'.join(lines)
+
+          def generate_readme():
+              """Generate the complete README"""
+              addons = get_all_addons()
+              addon_count = len(addons)
+
+              readme = f"""# Home Assistant Add-ons by mtebusi
+
+          [![GitHub Release][releases-shield]][releases]
+          [![GitHub Activity][commits-shield]][commits]
+          [![License][license-shield]](LICENSE)
+
+          This repository contains Home Assistant add-ons developed by mtebusi. Add-ons extend the functionality of your Home Assistant instance by providing additional services and integrations.
+
+          **Current add-ons:** {addon_count} | **Last updated:** {datetime.now().strftime('%Y-%m-%d')}
+
+          ## 📦 Available Add-ons
+
+          {generate_addon_table(addons)}
+
+          ---
+
+          ## 🚀 Installation
+
+          ### Adding this Repository
+
+          1. Open your Home Assistant instance
+          2. Navigate to **Settings** → **Add-ons** → **Add-on Store**
+          3. Click the three dots menu (⋮) → **Repositories**
+          4. Add this repository URL: `https://github.com/mtebusi/ha-addons`
+          5. Click **Add**
+
+          [![Open your Home Assistant instance and show the add add-on repository dialog with this repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmtebusi%2Fha-addons)
+
+          ### Installing an Add-on
+
+          Once the repository is added:
+
+          1. Find the desired add-on in the store
+          2. Click on the add-on
+          3. Click **Install**
+          4. Configure the add-on (if needed)
+          5. Click **Start**
+
+          ## 🛠️ Development
+
+          This repository uses a multi-addon architecture with shared infrastructure.
+
+          ### Quick Start - Creating a New Add-on
+
+          ```bash
+          # 1. Copy the template
+          cp -r .common/templates/ my-new-addon/
+
+          # 2. Update configuration
+          vim my-new-addon/config.yaml
+
+          # 3. Implement your add-on
+          mkdir -p my-new-addon/rootfs/app
+          # Add your code here
+
+          # 4. Test locally
+          ./.common/build.sh my-new-addon --arch amd64
+
+          # 5. Commit - CI/CD handles the rest!
+          git add my-new-addon/
+          git commit -m "feat: add my-new-addon"
+          git push
+          ```
+
+          ### Repository Structure
+
+          ```
+          /
+          ├── <addon-name>/           # Each add-on in its own directory
+          │   ├── config.yaml        # Add-on configuration
+          │   ├── Dockerfile         # Container definition
+          │   ├── README.md          # Add-on documentation
+          │   └── rootfs/            # Add-on runtime files
+          │       └── app/           # Application code
+          ├── .common/                # Shared resources
+          │   ├── build.sh           # Universal build script
+          │   └── templates/         # Templates for new add-ons
+          └── .github/workflows/      # Automated CI/CD
+          ```
+
+          ### Automation Features
+
+          This repository includes several automated workflows:
+
+          - 🏗️ **Smart Builds**: Only builds add-ons that changed
+          - 📝 **Auto-Changelog**: Automatically updates CHANGELOG.md
+          - 📋 **README Updates**: This file is auto-generated daily
+          - ✅ **Quality Checks**: Linting and validation on every commit
+          - 🔒 **Security Scans**: Weekly security vulnerability scanning
+
+          ### Build Control
+
+          Control builds with commit messages:
+
+          - `[skip ci]` or `[nobuild]` - Skip building entirely
+          - `[build-all]` - Force build all add-ons
+
+          For detailed development instructions, see [.common/README.md](.common/README.md)
+
+          ## 🏗️ Architecture Support
+
+          All add-ons support multiple architectures:
+
+          | Architecture | Description |
+          |--------------|-------------|
+          | amd64 | 64-bit x86 (Intel/AMD) |
+          | aarch64 | 64-bit ARM (Raspberry Pi 4, etc.) |
+          | armhf | 32-bit ARM with hardware floating point |
+          | armv7 | 32-bit ARMv7 |
+          | i386 | 32-bit x86 |
+
+          ## 🤝 Contributing
+
+          Contributions are welcome! Please:
+
+          1. Fork the repository
+          2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+          3. Implement your changes
+          4. Let CI/CD validate your changes
+          5. Submit a pull request
+
+          The automated workflows will handle building, testing, and validation.
+
+          ## 📞 Support
+
+          - **Issues**: [GitHub Issues](https://github.com/mtebusi/ha-addons/issues)
+          - **Discussions**: [GitHub Discussions](https://github.com/mtebusi/ha-addons/discussions)
+          - **Home Assistant Community**: [Community Forum](https://community.home-assistant.io/)
+
+          ## 📜 License
+
+          All add-ons in this repository are licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+          ## 🙏 Acknowledgments
+
+          - Home Assistant community for the amazing platform
+          - All contributors and testers
+          - Inspiration from [alexbelgium/hassio-addons](https://github.com/alexbelgium/hassio-addons) and [dianlight/hassio-addons](https://github.com/dianlight/hassio-addons)
+
+          ---
+
+          [releases-shield]: https://img.shields.io/github/release/mtebusi/ha-addons.svg
+          [releases]: https://github.com/mtebusi/ha-addons/releases
+          [commits-shield]: https://img.shields.io/github/commit-activity/y/mtebusi/ha-addons.svg
+          [commits]: https://github.com/mtebusi/ha-addons/commits/main
+          [license-shield]: https://img.shields.io/github/license/mtebusi/ha-addons.svg
+          """
+
+              return readme
+
+          # Generate and write README
+          readme_content = generate_readme()
+          with open('README.md', 'w') as f:
+              f.write(readme_content)
+
+          print("✅ README.md generated successfully")
+          PYTHON_SCRIPT
+
+          python generate_readme.py
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add README.md
+
+          if git diff --staged --quiet; then
+            echo "📋 No changes to README"
+          else
+            git commit -m "docs: auto-update README [skip ci]"
+            git push
+            echo "✅ README updated and committed"
+          fi
