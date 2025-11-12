@@ -34,4 +34,4 @@ schema:
   manual_host: str?
   manual_port: int(1,65535)?
   update_tar1090: bool
-image: "ghcr.io/mtebusi/{arch}-ha-adsb"
+image: "ghcr.io/mtebusi/{arch}-ha_adsb"

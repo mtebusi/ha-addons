@@ -130,9 +130,7 @@ jobs:
           args: |
             --${{ matrix.arch }} \
             --target ${{ matrix.addon }} \
-            --image "${{ env.REGISTRY }}/${{ github.repository_owner }}/{arch}-${{ steps.info.outputs.slug }}" \
             --docker-hub ${{ env.REGISTRY }}/${{ github.repository_owner }} \
-            --no-latest \
             ${{ github.event_name != 'pull_request' && '--addon' || '--test' }}
 
       - name: Build success
