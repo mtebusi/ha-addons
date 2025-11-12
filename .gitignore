@@ -30,6 +30,7 @@ env/
 # IDE
 .vscode/
 .idea/
+.editorconfig
 *.swp
 *.swo
 *~
@@ -67,6 +68,19 @@ test_config/
 *.db
 *.db-shm
 *.db-wal
+
 # Project-specific temporary files
 basics.md
 requirements.md
+CLAUDE.md
+test_mcp.py
+scripts/
+
+# Development artifacts
+*.bak
+*.orig
+*.rej
+*.swn
+.pre-commit-config.yaml
+.direnv
+.envrc
