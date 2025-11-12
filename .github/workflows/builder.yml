@@ -3,8 +3,11 @@ name: Build Add-ons
 on:
   push:
     branches: [main]
-    tags:
-      - 'v*'
+    paths:
+      - '**/config.yaml'
+      - '**/Dockerfile'
+      - '**/rootfs/**'
+      - '**/build.yaml'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -15,70 +18,44 @@ env:
 jobs:
   init:
     name: Initialize build
+    if: ${{ !contains(github.event.head_commit.message, '[nobuild]') && !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     outputs:
       changed_addons: ${{ steps.changed_addons.outputs.addons }}
-      build_all: ${{ steps.check_build_all.outputs.build_all }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for change detection
-
-      - name: Check if should skip build
-        id: skip_check
-        run: |
-          if [[ "${{ github.event.head_commit.message }}" == *"[nobuild]"* ]] || \
-             [[ "${{ github.event.head_commit.message }}" == *"[skip ci]"* ]]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "⏭️  Skipping build (found [nobuild] or [skip ci] in commit message)"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Check if should build all add-ons
-        id: check_build_all
-        run: |
-          # Build all add-ons if:
-          # - Manual trigger (workflow_dispatch)
-          # - Tag push
-          # - Commit message contains [build-all]
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || \
-             [[ "${{ github.ref }}" == refs/tags/* ]] || \
-             [[ "${{ github.event.head_commit.message }}" == *"[build-all]"* ]]; then
-            echo "build_all=true" >> $GITHUB_OUTPUT
-            echo "🏗️  Building ALL add-ons"
-          else
-            echo "build_all=false" >> $GITHUB_OUTPUT
-          fi
+          fetch-depth: 0
 
       - name: Detect changed add-ons
         id: changed_addons
-        if: steps.skip_check.outputs.skip == 'false'
         run: |
-          if [[ "${{ steps.check_build_all.outputs.build_all }}" == "true" ]]; then
-            # Build all add-ons
+          # Build all add-ons if workflow_dispatch or [build-all]
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || \
+             [[ "${{ github.event.head_commit.message }}" == *"[build-all]"* ]]; then
             addons=$(find . -maxdepth 2 -name config.yaml ! -path "*/.common/*" ! -path "*/templates/*" -exec dirname {} \; | sed 's|^\./||' | jq -R -s -c 'split("\n")[:-1]')
             echo "addons=${addons}" >> $GITHUB_OUTPUT
-            echo "📦 Building all add-ons: ${addons}"
+            echo "Building all add-ons: ${addons}"
           else
-            # Only build changed add-ons (for regular commits)
+            # Only build changed add-ons
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
               COMPARE_FROM="${{ github.event.pull_request.base.sha }}"
             else
               COMPARE_FROM="${{ github.event.before }}"
             fi
 
-            # Find changed config.yaml files
-            changed=$(git diff --name-only "${COMPARE_FROM}" "${{ github.sha }}" | grep -E '^[^/]+/config\.ya?ml$' | cut -d'/' -f1 | sort -u || echo "")
+            # Find directories with changed files
+            changed=$(git diff --name-only "${COMPARE_FROM}" "${{ github.sha }}" | grep -E '^[^/]+/' | cut -d'/' -f1 | sort -u | \
+                      xargs -I {} sh -c 'test -f {}/config.yaml && echo {}' || echo "")
 
             if [ -z "$changed" ]; then
               echo "addons=[]" >> $GITHUB_OUTPUT
-              echo "ℹ️  No add-on changes detected"
+              echo "No add-on changes detected"
             else
               addons=$(echo "$changed" | jq -R -s -c 'split("\n") | map(select(length > 0))')
               echo "addons=${addons}" >> $GITHUB_OUTPUT
-              echo "🔧 Changed add-ons: ${addons}"
+              echo "Changed add-ons: ${addons}"
             fi
           fi
 
@@ -101,59 +78,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get addon information
+      - name: Get add-on information
         id: info
         run: |
           if [ ! -f "${{ matrix.addon }}/config.yaml" ]; then
-            echo "❌ Error: config.yaml not found in ${{ matrix.addon }}"
+            echo "Error: config.yaml not found in ${{ matrix.addon }}"
             exit 1
           fi
 
-          VERSION=$(grep "^version:" ${{ matrix.addon }}/config.yaml | cut -d'"' -f2)
-          SLUG=$(grep "^slug:" ${{ matrix.addon }}/config.yaml | awk '{print $2}')
+          VERSION=$(grep "^version:" ${{ matrix.addon }}/config.yaml | awk '{print $2}' | tr -d '"')
+          SLUG=$(grep "^slug:" ${{ matrix.addon }}/config.yaml | awk '{print $2}' | tr -d '"')
           NAME=$(grep "^name:" ${{ matrix.addon }}/config.yaml | cut -d'"' -f2)
-          DESCRIPTION=$(grep "^description:" ${{ matrix.addon }}/config.yaml | cut -d'"' -f2)
 
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "slug=${SLUG}" >> $GITHUB_OUTPUT
           echo "name=${NAME}" >> $GITHUB_OUTPUT
-          echo "description=${DESCRIPTION}" >> $GITHUB_OUTPUT
 
-          echo "🏗️  Building ${NAME} v${VERSION} (${SLUG}) for ${{ matrix.arch }}"
+          echo "Building ${NAME} v${VERSION} (${SLUG}) for ${{ matrix.arch }}"
 
       - name: Check architecture support
         id: arch_check
         run: |
-          # Check if this architecture is supported by the add-on
-          if grep -q "arch:" ${{ matrix.addon }}/config.yaml; then
-            if grep -A 10 "arch:" ${{ matrix.addon }}/config.yaml | grep -q "${{ matrix.arch }}"; then
-              echo "supported=true" >> $GITHUB_OUTPUT
-              echo "✅ Architecture ${{ matrix.arch }} is supported"
-            else
-              echo "supported=false" >> $GITHUB_OUTPUT
-              echo "⏭️  Skipping unsupported architecture: ${{ matrix.arch }}"
-            fi
-          else
+          if grep -A 10 "arch:" ${{ matrix.addon }}/config.yaml | grep -q "${{ matrix.arch }}"; then
             echo "supported=true" >> $GITHUB_OUTPUT
+            echo "Architecture ${{ matrix.arch }} is supported"
+          else
+            echo "supported=false" >> $GITHUB_OUTPUT
+            echo "Skipping unsupported architecture: ${{ matrix.arch }}"
           fi
 
-      - name: Pre-build sanitization
+      - name: Sanitize add-on files
         if: steps.arch_check.outputs.supported == 'true'
         run: |
           cd "${{ matrix.addon }}"
-
-          echo "🧹 Sanitizing add-on files..."
-
-          # Convert CRLF to LF
-          find . -type f \( -name "*.sh" -o -name "*.yaml" -o -name "*.yml" -o -name "*.json" -o -name "*.py" \) -exec dos2unix {} \; 2>/dev/null || true
-
-          # Make all .sh files executable
-          find . -type f -name "*.sh" -exec chmod +x {} \;
-
-          # Normalize Unicode spaces to regular spaces
-          find . -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.json" \) -exec sed -i 's/\xC2\xA0/ /g' {} \; 2>/dev/null || true
-
-          echo "✅ Sanitization complete"
+          # Make service scripts executable
+          find . -type f -name "run" -o -name "finish" | xargs chmod +x 2>/dev/null || true
+          find . -type f -name "*.sh" | xargs chmod +x 2>/dev/null || true
 
       - name: Set up QEMU
         if: steps.arch_check.outputs.supported == 'true'
@@ -171,73 +131,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push with Home Assistant Builder
+      - name: Build add-on
         if: steps.arch_check.outputs.supported == 'true'
-        uses: home-assistant/builder@2024.03.0
+        uses: home-assistant/builder@2024.03.5
         with:
           args: |
             --${{ matrix.arch }} \
             --target ${{ matrix.addon }} \
-            --image "${{ steps.info.outputs.slug }}" \
-            --docker-hub "${{ env.REGISTRY }}/${{ github.repository_owner }}" \
-            --addon
+            --docker-hub ${{ env.REGISTRY }}/${{ github.repository_owner }} \
+            ${{ github.event_name != 'pull_request' && '--addon' || '--test' }}
 
-      - name: Image details
-        if: steps.arch_check.outputs.supported == 'true' && github.event_name != 'pull_request'
+      - name: Build success
+        if: steps.arch_check.outputs.supported == 'true'
         run: |
-          echo "✅ Built and pushed:"
-          echo "   ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.arch }}-${{ steps.info.outputs.slug }}:${{ steps.info.outputs.version }}"
-          echo "   ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.arch }}-${{ steps.info.outputs.slug }}:latest"
-
-  update_changelog:
-    name: Update changelogs
-    needs: [init, build]
-    if: |
-      always() &&
-      needs.build.result == 'success' &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update CHANGELOG files
-        run: |
-          for addon in $(echo '${{ needs.init.outputs.changed_addons }}' | jq -r '.[]'); do
-            if [ -f "${addon}/config.yaml" ] && [ -f "${addon}/CHANGELOG.md" ]; then
-              VERSION=$(grep "^version:" ${addon}/config.yaml | cut -d'"' -f2)
-              DATE=$(date +%Y-%m-%d)
-
-              # Check if this version already has a changelog entry
-              if ! grep -q "## \[${VERSION}\]" "${addon}/CHANGELOG.md" 2>/dev/null; then
-                echo "📝 Adding changelog entry for ${addon} v${VERSION}"
-
-                # Create backup
-                cp "${addon}/CHANGELOG.md" "${addon}/CHANGELOG.md.bak"
-
-                # Add new version entry
-                {
-                  echo "## [${VERSION}] - ${DATE}"
-                  echo ""
-                  echo "- Updated to version ${VERSION}"
-                  echo ""
-                  cat "${addon}/CHANGELOG.md"
-                } > "${addon}/CHANGELOG.md.new"
-
-                mv "${addon}/CHANGELOG.md.new" "${addon}/CHANGELOG.md"
-                rm "${addon}/CHANGELOG.md.bak"
-              fi
-            fi
-          done
-
-      - name: Commit changelog updates
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: auto-update changelogs [skip ci]" && git push)
+          echo "Successfully built ${{ matrix.addon }} for ${{ matrix.arch }}"

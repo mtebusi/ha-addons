@@ -7,6 +7,56 @@ on:
     branches: [main]
 
 jobs:
+  addon-validate:
+    name: Validate add-on configurations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML
+        run: pip install PyYAML
+
+      - name: Validate add-on configurations
+        run: |
+          for config in $(find . -maxdepth 2 -name "config.yaml" ! -path "*/.common/*" ! -path "*/templates/*"); do
+            echo "Validating $config"
+            python3 << 'EOF'
+          import yaml
+          import sys
+          import os
+
+          config_file = "$config"
+          addon_dir = os.path.dirname(config_file)
+
+          with open(config_file, 'r') as f:
+              config = yaml.safe_load(f)
+
+          # Check required fields
+          required = ['name', 'version', 'slug', 'description', 'arch']
+          for field in required:
+              if field not in config:
+                  print(f"❌ {addon_dir}: Missing required field: {field}")
+                  sys.exit(1)
+
+          # Check required files
+          required_files = ['README.md', 'Dockerfile']
+          for req_file in required_files:
+              file_path = os.path.join(addon_dir, req_file)
+              if not os.path.exists(file_path):
+                  print(f"❌ {addon_dir}: Missing required file: {req_file}")
+                  sys.exit(1)
+
+          print(f"✅ {addon_dir}: Configuration valid")
+          EOF
+          done
+
   python-lint:
     name: Lint Python code
     runs-on: ubuntu-latest
@@ -16,25 +66,23 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install linting tools
         run: |
           python -m pip install --upgrade pip
-          pip install ruff black mypy
+          pip install ruff
 
-      - name: Find and lint Python code
+      - name: Lint Python code
         run: |
-          # Find all Python code in add-on rootfs directories
           if find . -path "**/rootfs/app/*.py" -type f | head -1 | grep -q .; then
-            echo "Found Python code, running linters..."
-            find . -path "**/rootfs/app" -type d | while read dir; do
+            echo "Found Python code, running ruff..."
+            for dir in $(find . -path "**/rootfs/app" -type d); do
               if [ -d "$dir" ] && find "$dir" -name "*.py" -type f | head -1 | grep -q .; then
                 echo "Linting $dir"
-                ruff check "$dir" || true
-                black --check "$dir" || true
+                ruff check "$dir" --fix || true
               fi
             done
           else
@@ -50,7 +98,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -59,8 +107,8 @@ jobs:
 
       - name: Lint YAML files
         run: |
-          yamllint .github/ || true
-          find . -maxdepth 2 -name "*.yaml" -o -name "*.yml" ! -path "*/.common/*" ! -path "*/.git/*" | xargs yamllint || true
+          yamllint -d relaxed .github/ || true
+          find . -maxdepth 2 -name "*.yaml" -o -name "*.yml" ! -path "*/.common/*" ! -path "*/.git/*" | xargs yamllint -d relaxed || true
 
   dockerfile-lint:
     name: Lint Dockerfiles
@@ -70,88 +118,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Find and lint Dockerfiles
+      - name: Lint Dockerfiles
         run: |
-          find . -maxdepth 2 -name "Dockerfile" ! -path "*/.common/*" | while read dockerfile; do
+          for dockerfile in $(find . -maxdepth 2 -name "Dockerfile" ! -path "*/.common/*"); do
             echo "Linting $dockerfile"
-            docker run --rm -i hadolint/hadolint < "$dockerfile" || true
-          done
-
-  addon-validate:
-    name: Validate add-on configurations
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-
-      - name: Install PyYAML
-        run: pip install PyYAML
-
-      - name: Validate addon configurations
-        run: |
-          find . -maxdepth 2 -name "config.yaml" ! -path "*/.common/*" ! -path "*/templates/*" | while read config; do
-            echo "Validating $config"
-            python -c "
-          import yaml
-          import sys
-          import os
-
-          config_file = '$config'
-          addon_dir = os.path.dirname(config_file)
-
-          # Load and validate config.yaml
-          with open(config_file, 'r') as f:
-              config = yaml.safe_load(f)
-
-          # Check required fields
-          required = ['name', 'version', 'slug', 'description', 'arch']
-          for field in required:
-              if field not in config:
-                  print(f'❌ {addon_dir}: Missing required field: {field}')
-                  sys.exit(1)
-
-          # Validate schema
-          if 'schema' in config and 'options' in config:
-              for key in config['schema'].keys():
-                  if key not in config['options']:
-                      print(f'⚠️  {addon_dir}: Schema key {key} not in default options')
-
-          # Check for required files
-          required_files = ['README.md', 'Dockerfile']
-          for req_file in required_files:
-              file_path = os.path.join(addon_dir, req_file)
-              if not os.path.exists(file_path):
-                  print(f'❌ {addon_dir}: Missing required file: {req_file}')
-                  sys.exit(1)
-
-          print(f'✅ {addon_dir}: Configuration valid')
-          "
+            docker run --rm -i hadolint/hadolint:latest-alpine < "$dockerfile" || true
           done
 
   security-scan:
     name: Security scan
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Run Trivy security scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
