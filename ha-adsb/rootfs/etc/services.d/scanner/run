@@ -1,0 +1,9 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start ADS-B scanner and integration service
+# ==============================================================================
+bashio::log.info "Starting ADS-B Dashboard service..."
+
+cd /app || bashio::exit.nok "Could not change directory to /app"
+
+exec python3 -u main.py

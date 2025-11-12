@@ -1,0 +1,10 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start nginx proxy for tar1090
+# ==============================================================================
+bashio::log.info "Starting nginx proxy..."
+
+# Wait for main service to write nginx config
+sleep 5
+
+exec nginx -c /etc/nginx/nginx.conf

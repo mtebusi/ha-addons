@@ -1,0 +1,37 @@
+name: "ADS-B Dashboard"
+version: "0.1.0"
+slug: "ha_adsb"
+description: "Lightweight ADS-B receiver dashboard with auto-discovery and tar1090 integration"
+url: "https://github.com/mtebusi/ha-addons"
+arch:
+  - amd64
+  - aarch64
+  - armhf
+  - armv7
+  - i386
+startup: services
+boot: auto
+init: false
+hassio_api: true
+homeassistant_api: true
+ingress: true
+ingress_port: 8080
+panel_icon: mdi:airplane
+panel_title: ADS-B Dashboard
+ports_description:
+  Network scanning for local ADS-B receivers
+options:
+  log_level: info
+  scan_interval: 30
+  auto_detect: true
+  manual_host: ""
+  manual_port: 0
+  update_tar1090: true
+schema:
+  log_level: list(debug|info|warning|error)
+  scan_interval: int(10,300)?
+  auto_detect: bool
+  manual_host: str?
+  manual_port: int(1,65535)?
+  update_tar1090: bool
+image: "ghcr.io/mtebusi/{arch}-ha-adsb"

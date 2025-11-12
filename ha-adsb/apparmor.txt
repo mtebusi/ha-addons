@@ -1,0 +1,74 @@
+#include <tunables/global>
+
+profile ha_adsb flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # Capabilities
+  capability net_bind_service,
+  capability net_raw,
+  capability setgid,
+  capability setuid,
+  capability dac_override,
+  capability dac_read_search,
+
+  # S6-Overlay
+  /init ix,
+  /bin/** ix,
+  /usr/bin/** ix,
+  /run/{s6,s6-rc*,service}/** ix,
+  /package/** ix,
+  /command/** ix,
+  /etc/services.d/** rwix,
+  /etc/cont-init.d/** rwix,
+  /etc/cont-finish.d/** rwix,
+  /run/{,**} rwk,
+  /dev/tty rw,
+
+  # Bashio
+  /usr/lib/bashio/** ix,
+  /tmp/** rw,
+
+  # Access to options.json and other files within your addon
+  /data/** rw,
+
+  # Access to mapped volumes (supervisor provides)
+  /config/** r,
+  /share/** rw,
+  /ssl/** r,
+
+  # Python
+  /usr/bin/python3* ix,
+  /usr/lib/python3*/** mr,
+
+  # Nginx
+  /usr/sbin/nginx ix,
+  /etc/nginx/** r,
+  /var/www/tar1090/** rw,
+  /var/log/nginx/** rw,
+  /var/lib/nginx/** rw,
+  /run/nginx/** rw,
+
+  # Application files
+  /app/** r,
+  /app/*.py r,
+
+  # Network access for scanning and proxying
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+  network tcp,
+  network udp,
+
+  # Git for tar1090 updates
+  /usr/bin/git ix,
+  /usr/libexec/git-core/** ix,
+
+  # Proc & sys
+  /proc/cpuinfo r,
+  /proc/sys/kernel/random/uuid r,
+  /sys/devices/**/net/** r,
+
+  # Suppress some noisy denials
+  deny /proc/sys/net/ipv4/ping_group_range r,
+}

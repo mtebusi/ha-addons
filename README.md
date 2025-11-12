@@ -6,12 +6,13 @@
 
 This repository contains Home Assistant add-ons developed by mtebusi. Add-ons extend the functionality of your Home Assistant instance by providing additional services and integrations.
 
-**Current add-ons:** 1 | **Last updated:** 2025-11-12
+**Current add-ons:** 2 | **Last updated:** 2025-11-12
 
 ## 📦 Available Add-ons
 
 | Add-on | Version | Description | Architectures |
 |--------|---------|-------------|---------------|
+| [ADS-B Dashboard](ha-adsb/README.md) | `0.1.0` | Lightweight ADS-B receiver dashboard with auto-discovery and tar1090 integration | `amd64` `aarch64` `armv7` `armhf` `i386` |
 | [HomeAssistant MCP Server](ha-mcp-server/README.md) | `0.0.1` | MCP server for Claude Desktop integration with HomeAssistant | `amd64` `aarch64` `armv7` `armhf` `i386` |
 
 ---
