@@ -20,42 +20,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install PyYAML
+      - name: Install dependencies
         run: pip install PyYAML
 
       - name: Validate add-on configurations
-        run: |
-          for config in $(find . -maxdepth 2 -name "config.yaml" ! -path "*/.common/*" ! -path "*/templates/*"); do
-            echo "Validating $config"
-            CONFIG_FILE="$config" python3 << 'PYEOF'
-import yaml
-import sys
-import os
-
-config_file = os.environ['CONFIG_FILE']
-addon_dir = os.path.dirname(config_file)
-
-with open(config_file, 'r') as f:
-    config = yaml.safe_load(f)
-
-# Check required fields
-required = ['name', 'version', 'slug', 'description', 'arch']
-for field in required:
-    if field not in config:
-        print(f"❌ {addon_dir}: Missing required field: {field}")
-        sys.exit(1)
-
-# Check required files
-required_files = ['README.md', 'Dockerfile']
-for req_file in required_files:
-    file_path = os.path.join(addon_dir, req_file)
-    if not os.path.exists(file_path):
-        print(f"❌ {addon_dir}: Missing required file: {req_file}")
-        sys.exit(1)
-
-print(f"✅ {addon_dir}: Configuration valid")
-PYEOF
-          done
+        run: python3 .common/validate-addon.py
 
   python-lint:
     name: Lint Python code
