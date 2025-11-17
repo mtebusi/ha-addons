@@ -6,7 +6,7 @@
 
 This repository contains Home Assistant add-ons developed by mtebusi. Add-ons extend the functionality of your Home Assistant instance by providing additional services and integrations.
 
-**Current add-ons:** 2 | **Last updated:** 2025-11-16
+**Current add-ons:** 2 | **Last updated:** 2025-11-17
 
 ## 📦 Available Add-ons
 
